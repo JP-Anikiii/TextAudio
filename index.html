@@ -111,6 +111,10 @@
 
             // 英語音声を抽出
             let enVoices = voices.filter(v => v.lang.includes('en'));
+            if (enVoices.length === 0) {
+                // 万が一英語音声が見つからない環境だった場合のフォールバック
+                enVoices = voices;
+            }
 
             let googleMales = [];
             let googleFemales = [];
@@ -165,10 +169,10 @@
 
             // 万が一、該当する音声が足りない場合は同じ声で埋めてエラーを防ぐ
             while (finalMales.length < 2) {
-                finalMales.push(finalMales[0] || enVoices[0]);
+                finalMales.push(finalMales[0] || enVoices[0] || voices[0]);
             }
             while (finalFemales.length < 2) {
-                finalFemales.push(finalFemales[0] || enVoices[0]);
+                finalFemales.push(finalFemales[0] || enVoices[0] || voices[0]);
             }
 
             let characters = [];
@@ -235,6 +239,10 @@
             
             if (targetVoice) {
                 utterThis.voice = targetVoice;
+                // 【重要】言語を明示的に指定。これがないと日本語エンジンで英語を読もうとして音声がおかしくなる環境があります。
+                utterThis.lang = targetVoice.lang; 
+            } else {
+                utterThis.lang = 'en-US';
             }
 
             utterThis.rate = parseFloat(rateSlider.value);
