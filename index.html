@@ -48,12 +48,16 @@
                 <textarea id="text-input" rows="6" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow resize-y" placeholder="Enter the text you want to read aloud here..."></textarea>
             </div>
 
+            <!-- エラーメッセージ表示エリア (追加) -->
+            <div id="error-message" class="hidden text-red-600 font-bold text-sm bg-red-50 p-3 rounded-lg border border-red-200">
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
                 
                 <div class="md:col-span-2">
                     <label for="voice-select" class="block text-sm font-medium text-gray-700 mb-2">音声（キャラクター選択）</label>
                     <select id="voice-select" class="w-full p-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer">
-                        <option value="">音声を読み込み中...</option>
+                        <option value="" data-name="loading">音声を読み込み中...</option>
                     </select>
                     <p class="text-xs text-gray-500 mt-1">※男性2名、女性2名の計4名のキャラクターを選択できます。</p>
                 </div>
@@ -102,6 +106,7 @@
         const playBtn = document.getElementById('play-btn');
         const pauseBtn = document.getElementById('pause-btn');
         const stopBtn = document.getElementById('stop-btn');
+        const errorMessage = document.getElementById('error-message'); // 追加
 
         let voices = [];
 
@@ -109,9 +114,20 @@
             voices = synth.getVoices();
             if (voices.length === 0) return;
 
-            // 1. 英語音声だけを【厳密に】抽出。日本語音声が混ざらないようにする。
-            // 以前あった「英語音声がない場合に全音声を追加する（日本語が混ざる原因）」処理を削除しました。
-            let enVoices = voices.filter(v => v.lang.startsWith('en'));
+            // 1. 英語音声だけを【厳密に】抽出。
+            let enVoices = voices.filter(v => v.lang.toLowerCase().includes('en') || v.name.toLowerCase().includes('english'));
+
+            voiceSelect.innerHTML = '';
+
+            // 【重要】英語の音声が1つもインストールされていない環境の場合
+            if (enVoices.length === 0) {
+                const option = document.createElement('option');
+                option.textContent = "⚠️英語の音声が見つかりません";
+                option.setAttribute('data-name', 'none');
+                option.setAttribute('data-pitch-adjust', 1.0);
+                voiceSelect.appendChild(option);
+                return;
+            }
 
             let googleMales = [];
             let googleFemales = [];
@@ -126,11 +142,11 @@
                 let isFemale = false;
                 let isMale = false;
 
-                // 女性判定キーワード ('female'は単語境界で判定し、誤作動を防止)
+                // 女性判定キーワード
                 if (/\bfemale\b/.test(low) || ['zira', 'hazel', 'samantha', 'siri', 'karen', 'victoria', 'tessa', 'susan', 'moira', 'fiona', 'ava', 'allison'].some(kw => low.includes(kw)) || low === 'google us english') {
                     isFemale = true;
                 } 
-                // 男性判定キーワード ('male'は単語境界で判定)
+                // 男性判定キーワード
                 else if (/\bmale\b/.test(low) || ['david', 'mark', 'alex', 'daniel', 'james', 'guy', 'arthur', 'george', 'fred', 'tom', 'oliver'].some(kw => low.includes(kw))) {
                     isMale = true;
                 }
@@ -155,39 +171,43 @@
             let finalMales = [...googleMales, ...otherMales];
             let finalFemales = [...googleFemales, ...otherFemales];
 
-            let characters = [];
+            let male1, male2, female1, female2;
+            let mPitch1 = 1.0, mPitch2 = 1.0, fPitch1 = 1.0, fPitch2 = 1.0;
 
-            // 【重要】パソコンに「英語の男性音声」や「英語の女性音声」がインストールされていない場合の救済措置
-            // 足りない性別の声は、逆の性別の声を「ピッチ（声の高さ）」で調整して擬似的に作り出します。
-            
-            // 男性スロットの生成
-            let male1 = finalMales[0];
-            let male2 = finalMales.find(v => v !== male1) || male1;
-            let malePitchAdjust = 1.0; // 通常の高さ
-            
-            if (!male1) { // 英語の男性音声が1つもない環境の場合
-                male1 = finalFemales[0] || null;
-                male2 = finalFemales.find(v => v !== male1) || male1;
-                malePitchAdjust = 0.5; // 女性の声を低くして男性っぽくする
+            // 男性スロットの確保（足りなければ女性の声を低くして代用）
+            if (finalMales.length >= 2) {
+                male1 = finalMales[0];
+                male2 = finalMales[1];
+            } else if (finalMales.length === 1) {
+                male1 = finalMales[0];
+                male2 = finalMales[0];
+            } else {
+                male1 = finalFemales[0];
+                male2 = finalFemales[1] || finalFemales[0];
+                mPitch1 = 0.5; 
+                mPitch2 = 0.6; 
             }
 
-            // 女性スロットの生成
-            let female1 = finalFemales[0];
-            let female2 = finalFemales.find(v => v !== female1) || female1;
-            let femalePitchAdjust = 1.0; // 通常の高さ
-            
-            if (!female1) { // 英語の女性音声が1つもない環境の場合
-                female1 = finalMales[0] || null;
-                female2 = finalMales.find(v => v !== female1) || female1;
-                femalePitchAdjust = 1.5; // 男性の声を高くして女性っぽくする
+            // 女性スロットの確保（足りなければ男性の声を高くして代用）
+            if (finalFemales.length >= 2) {
+                female1 = finalFemales[0];
+                female2 = finalFemales[1];
+            } else if (finalFemales.length === 1) {
+                female1 = finalFemales[0];
+                female2 = finalFemales[0];
+            } else {
+                female1 = finalMales[0];
+                female2 = finalMales[1] || finalMales[0];
+                fPitch1 = 1.5; 
+                fPitch2 = 1.6; 
             }
 
-            characters.push({ label: "John (男性)", voice: male1, pitchAdjust: malePitchAdjust });
-            characters.push({ label: "Mike (男性)", voice: male2, pitchAdjust: malePitchAdjust });
-            characters.push({ label: "Emma (女性)", voice: female1, pitchAdjust: femalePitchAdjust });
-            characters.push({ label: "Sophia (女性)", voice: female2, pitchAdjust: femalePitchAdjust });
-
-            voiceSelect.innerHTML = '';
+            let characters = [
+                { label: "John (男性)", voice: male1, pitchAdjust: mPitch1 },
+                { label: "Mike (男性)", voice: male2, pitchAdjust: mPitch2 },
+                { label: "Emma (女性)", voice: female1, pitchAdjust: fPitch1 },
+                { label: "Sophia (女性)", voice: female2, pitchAdjust: fPitch2 }
+            ];
             
             // セレクトボックスに追加
             characters.forEach((char) => {
@@ -195,10 +215,7 @@
                 option.textContent = char.label;
                 if (char.voice) {
                     option.setAttribute('data-name', char.voice.name);
-                } else {
-                    option.setAttribute('data-name', 'default');
                 }
-                // ピッチ調整値を保存しておく
                 option.setAttribute('data-pitch-adjust', char.pitchAdjust);
                 voiceSelect.appendChild(option);
             });
@@ -209,6 +226,14 @@
         if (speechSynthesis.onvoiceschanged !== undefined) {
             speechSynthesis.onvoiceschanged = populateVoiceList;
         }
+
+        // ブラウザの音声読み込み遅延対策（確実にリストを取得するまでポーリング）
+        let voiceCheckInterval = setInterval(() => {
+            if (synth.getVoices().length > 0) {
+                populateVoiceList();
+                clearInterval(voiceCheckInterval);
+            }
+        }, 500);
 
         // スライダー表示更新
         rateSlider.addEventListener('input', () => {
@@ -222,7 +247,24 @@
         // 再生ロジック
         playBtn.addEventListener('click', () => {
             const text = textInput.value;
+            errorMessage.classList.add('hidden'); // エラー表示をリセット
+
             if (text === '') return;
+
+            const selectedOption = voiceSelect.selectedOptions[0];
+            if (!selectedOption) return;
+
+            const targetVoiceName = selectedOption.getAttribute('data-name');
+            
+            // 読み込み中、または英語音声がない場合はエラーを表示して中断
+            if (targetVoiceName === 'loading') {
+                return; // まだ読み込み中の場合は何もしない
+            }
+            if (targetVoiceName === 'none') {
+                errorMessage.textContent = '【エラー】お使いのブラウザやOSに「英語の音声」がインストールされていません。そのため再生できません。Chromeなどの別のブラウザを試すか、OSの設定から英語(米国)の音声パッケージを追加してください。';
+                errorMessage.classList.remove('hidden');
+                return;
+            }
             
             if (synth.paused) {
                 synth.resume();
@@ -234,8 +276,6 @@
             }
 
             const utterThis = new SpeechSynthesisUtterance(text);
-            const selectedOption = voiceSelect.selectedOptions[0];
-            const targetVoiceName = selectedOption.getAttribute('data-name');
             const targetPitchAdjust = parseFloat(selectedOption.getAttribute('data-pitch-adjust'));
             
             const targetVoice = voices.find(v => v.name === targetVoiceName);
@@ -245,7 +285,6 @@
                 // 言語を明示的に指定して、日本語エンジンで読まれるのを防ぐ
                 utterThis.lang = targetVoice.lang; 
             } else {
-                // 音声が見つからない場合は、OS標準の英語エンジンを強制呼び出し
                 utterThis.lang = 'en-US';
             }
 
