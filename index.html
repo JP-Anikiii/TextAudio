@@ -129,34 +129,36 @@
                 return;
             }
 
-            let googleMales = [];
-            let googleFemales = [];
+            // 安定性の高いMicrosoft（Windows標準）音声を優先するためのリスト
+            let msMales = [];
+            let msFemales = [];
             let otherMales = [];
             let otherFemales = [];
 
             // 厳密な性別振り分け
             enVoices.forEach(v => {
                 const low = v.name.toLowerCase();
-                const isGoogle = low.includes('google');
+                // Microsoft音声を判定
+                const isMs = low.includes('microsoft');
                 
                 let isFemale = false;
                 let isMale = false;
 
-                // 女性判定キーワード
-                if (/\bfemale\b/.test(low) || ['zira', 'hazel', 'samantha', 'siri', 'karen', 'victoria', 'tessa', 'susan', 'moira', 'fiona', 'ava', 'allison'].some(kw => low.includes(kw)) || low === 'google us english') {
+                // 女性判定キーワード（最近のWindows音声 jenny, aria 等も追加）
+                if (/\bfemale\b/.test(low) || ['zira', 'hazel', 'samantha', 'siri', 'karen', 'victoria', 'tessa', 'susan', 'moira', 'fiona', 'ava', 'allison', 'jenny', 'aria'].some(kw => low.includes(kw))) {
                     isFemale = true;
                 } 
-                // 男性判定キーワード
-                else if (/\bmale\b/.test(low) || ['david', 'mark', 'alex', 'daniel', 'james', 'guy', 'arthur', 'george', 'fred', 'tom', 'oliver'].some(kw => low.includes(kw))) {
+                // 男性判定キーワード（christopher, eric 等も追加）
+                else if (/\bmale\b/.test(low) || ['david', 'mark', 'alex', 'daniel', 'james', 'guy', 'arthur', 'george', 'fred', 'tom', 'oliver', 'christopher', 'eric'].some(kw => low.includes(kw))) {
                     isMale = true;
                 }
 
                 // 分類
                 if (isFemale) {
-                    if (isGoogle) googleFemales.push(v);
+                    if (isMs) msFemales.push(v);
                     else otherFemales.push(v);
                 } else if (isMale) {
-                    if (isGoogle) googleMales.push(v);
+                    if (isMs) msMales.push(v);
                     else otherMales.push(v);
                 } else {
                     // 名前から性別がわからない英語音声（バランスよく分配）
@@ -168,8 +170,9 @@
                 }
             });
 
-            let finalMales = [...googleMales, ...otherMales];
-            let finalFemales = [...googleFemales, ...otherFemales];
+            // Microsoft音声を最優先に配置する
+            let finalMales = [...msMales, ...otherMales];
+            let finalFemales = [...msFemales, ...otherFemales];
 
             let male1, male2, female1, female2;
             let mPitch1 = 1.0, mPitch2 = 1.0, fPitch1 = 1.0, fPitch2 = 1.0;
