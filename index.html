@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>テキスト読み上げアプリ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            margin-top: -8px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #e5e7eb;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-gray-800 p-4 sm:p-8">
+
+    <div class="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
+        
+        <div class="bg-blue-600 px-6 py-4">
+            <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                <i class="fas fa-volume-up"></i> テキスト読み上げアプリ
+            </h1>
+        </div>
+
+        <div class="p-6 space-y-6">
+            
+            <div>
+                <label for="text-input" class="block text-sm font-medium text-gray-700 mb-2">読み上げるテキスト</label>
+                <textarea id="text-input" rows="6" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow resize-y" placeholder="Enter the text you want to read aloud here..."></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                
+                <div class="md:col-span-2">
+                    <label for="voice-select" class="block text-sm font-medium text-gray-700 mb-2">音声（キャラクター選択）</label>
+                    <select id="voice-select" class="w-full p-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer">
+                        <option value="">音声を読み込み中...</option>
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">※男性2名、女性2名の計4名のキャラクターを選択できます。</p>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label for="rate-slider" class="block text-sm font-medium text-gray-700">再生速度</label>
+                        <span id="rate-value" class="text-sm font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded">1.0倍</span>
+                    </div>
+                    <input type="range" id="rate-slider" min="0.5" max="2" step="0.1" value="1">
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label for="pitch-slider" class="block text-sm font-medium text-gray-700">音質（声の高さ）</label>
+                        <span id="pitch-value" class="text-sm font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded">1.0</span>
+                    </div>
+                    <input type="range" id="pitch-slider" min="0" max="1.5" step="0.1" value="1">
+                </div>
+
+            </div>
+
+            <div class="flex flex-wrap justify-center gap-4 pt-4 border-t border-gray-100">
+                <button id="play-btn" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-transform transform hover:scale-105 active:scale-95">
+                    <i class="fas fa-play"></i> 再生
+                </button>
+                <button id="pause-btn" class="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-transform transform hover:scale-105 active:scale-95">
+                    <i class="fas fa-pause"></i> 一時停止
+                </button>
+                <button id="stop-btn" class="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-transform transform hover:scale-105 active:scale-95">
+                    <i class="fas fa-stop"></i> 停止
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const synth = window.speechSynthesis;
+        const textInput = document.getElementById('text-input');
+        const voiceSelect = document.getElementById('voice-select');
+        const rateSlider = document.getElementById('rate-slider');
+        const rateValue = document.getElementById('rate-value');
+        const pitchSlider = document.getElementById('pitch-slider');
+        const pitchValue = document.getElementById('pitch-value');
+        const playBtn = document.getElementById('play-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const stopBtn = document.getElementById('stop-btn');
+
+        let voices = [];
+
+        function populateVoiceList() {
+            voices = synth.getVoices();
+            if (voices.length === 0) return;
+
+            // 英語音声を抽出
+            let enVoices = voices.filter(v => v.lang.includes('en'));
+
+            let googleMales = [];
+            let googleFemales = [];
+            let otherMales = [];
+            let otherFemales = [];
+            let unclassified = [];
+
+            // 厳密な性別振り分け
+            enVoices.forEach(v => {
+                const low = v.name.toLowerCase();
+                const isGoogle = low.includes('google');
+                
+                let isFemale = false;
+                let isMale = false;
+
+                // 1. まず女性を判定 ('female', 'zira', 'samantha' など、または 'google us english' は女性)
+                if (low.includes('female') || low.includes('zira') || low.includes('samantha') || low.includes('victoria') || low.includes('karen') || low.includes('tessa') || low === 'google us english') {
+                    isFemale = true;
+                } 
+                // 2. 次に男性を判定 (女性ではない ＆ 'male' が独立した単語である、または 'david', 'alex' など)
+                else if (/\bmale\b/.test(low) || low.includes('david') || low.includes('mark') || low.includes('alex') || low.includes('daniel') || low.includes('james')) {
+                    isMale = true;
+                }
+
+                // 3. 分類
+                if (isFemale) {
+                    if (isGoogle) googleFemales.push(v);
+                    else otherFemales.push(v);
+                } else if (isMale) {
+                    if (isGoogle) googleMales.push(v);
+                    else otherMales.push(v);
+                } else {
+                    unclassified.push(v); // 名前から性別が分からない音声
+                }
+            });
+
+            // 性別不明な音声を、足りない枠に補填する
+            unclassified.forEach(v => {
+                const isGoogle = v.name.toLowerCase().includes('google');
+                if (googleMales.length + otherMales.length < 2) {
+                    if (isGoogle) googleMales.push(v);
+                    else otherMales.push(v);
+                } else {
+                    if (isGoogle) googleFemales.push(v);
+                    else otherFemales.push(v);
+                }
+            });
+
+            // 最終的なリストを作成
+            let finalMales = [...googleMales, ...otherMales];
+            let finalFemales = [...googleFemales, ...otherFemales];
+
+            // 万が一、該当する音声が足りない場合は同じ声で埋めてエラーを防ぐ
+            while (finalMales.length < 2) {
+                finalMales.push(finalMales[0] || enVoices[0]);
+            }
+            while (finalFemales.length < 2) {
+                finalFemales.push(finalFemales[0] || enVoices[0]);
+            }
+
+            let characters = [];
+            
+            // 男性スロット (必ず異なる2つの声を選ぶようにする)
+            characters.push({ voice: finalMales[0], label: "John (男性)" });
+            let mikeVoice = finalMales.find(v => v !== finalMales[0]) || finalMales[0];
+            characters.push({ voice: mikeVoice, label: "Mike (男性)" });
+
+            // 女性スロット (必ず異なる2つの声を選ぶようにする)
+            characters.push({ voice: finalFemales[0], label: "Emma (女性)" });
+            let sophiaVoice = finalFemales.find(v => v !== finalFemales[0]) || finalFemales[0];
+            characters.push({ voice: sophiaVoice, label: "Sophia (女性)" });
+
+            voiceSelect.innerHTML = '';
+            
+            if (characters.length === 0) {
+                const option = document.createElement('option');
+                option.textContent = '英語の音声が見つかりません';
+                voiceSelect.appendChild(option);
+                return;
+            }
+
+            characters.forEach((char) => {
+                const option = document.createElement('option');
+                option.textContent = char.label;
+                option.setAttribute('data-name', char.voice.name);
+                voiceSelect.appendChild(option);
+            });
+        }
+
+        // 音声リストの初期化と更新監視
+        populateVoiceList();
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = populateVoiceList;
+        }
+
+        // スライダー表示更新
+        rateSlider.addEventListener('input', () => {
+            rateValue.textContent = parseFloat(rateSlider.value).toFixed(1) + '倍';
+        });
+
+        pitchSlider.addEventListener('input', () => {
+            pitchValue.textContent = parseFloat(pitchSlider.value).toFixed(1);
+        });
+
+        // 再生ロジック
+        playBtn.addEventListener('click', () => {
+            const text = textInput.value;
+            if (text === '') return;
+            
+            if (synth.paused) {
+                synth.resume();
+                return;
+            }
+            
+            if (synth.speaking) {
+                synth.cancel();
+            }
+
+            const utterThis = new SpeechSynthesisUtterance(text);
+            const selectedOption = voiceSelect.selectedOptions[0].getAttribute('data-name');
+            const targetVoice = voices.find(v => v.name === selectedOption);
+            
+            if (targetVoice) {
+                utterThis.voice = targetVoice;
+            }
+
+            utterThis.rate = parseFloat(rateSlider.value);
+            utterThis.pitch = parseFloat(pitchSlider.value);
+            
+            synth.speak(utterThis);
+        });
+
+        pauseBtn.addEventListener('click', () => {
+            if (synth.speaking && !synth.paused) synth.pause();
+        });
+
+        stopBtn.addEventListener('click', () => {
+            synth.cancel();
+        });
+    </script>
+</body>
+</html>
